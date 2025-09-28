@@ -539,8 +539,7 @@
             <div class="number-input-section" id="numberInputSection">
                 <h3 id="numberInputTitle">Player 1: Enter your secret number</h3>
                 <div class="number-inputs" id="numberInputs">
-                    <!-- Inputs will be generated dynamically -->
-                </div>
+                    </div>
                 <button class="submit-btn" onclick="submitSecretNumber()">Submit Secret Number</button>
             </div>
 
@@ -549,8 +548,7 @@
             <div class="guess-section" id="guessSection" style="display: none;">
                 <h3 id="guessTitle">Player 1: Make your guess</h3>
                 <div class="guess-inputs" id="guessInputs">
-                    <!-- Inputs will be generated dynamically -->
-                </div>
+                    </div>
                 <button class="guess-btn" onclick="makeGuess()">🔍 Make Guess</button>
             </div>
 
@@ -577,33 +575,26 @@
         let gamePhase = 'setup'; // 'setup', 'secret1', 'secret2', 'guessing'
         let difficulty = 4;
         let roundCount = 0;
-        const maxRounds = 9999;
+        const maxRounds = 15;
 
         function selectDifficulty(button) {
-            // Remove selection from all buttons
             document.querySelectorAll('.difficulty-btn').forEach(btn => {
                 btn.classList.remove('selected');
             });
-            
-            // Add selection to clicked button
             button.classList.add('selected');
             difficulty = parseInt(button.dataset.size);
         }
 
-        // Add event listeners to difficulty buttons
         document.addEventListener('DOMContentLoaded', function() {
             document.querySelectorAll('.difficulty-btn').forEach(button => {
                 button.addEventListener('click', () => selectDifficulty(button));
             });
-            
-            // Select easy by default
             selectDifficulty(document.querySelector('[data-size="4"]'));
         });
 
         function generateInputs(containerId, placeholder) {
             const container = document.getElementById(containerId);
             container.innerHTML = '';
-            
             for (let i = 0; i < difficulty; i++) {
                 const input = document.createElement('input');
                 input.type = 'number';
@@ -645,7 +636,6 @@
             document.getElementById('guessHistory').innerHTML = '';
             document.getElementById('result').style.display = 'none';
             
-            // Generate inputs for secret number entry
             generateInputs('numberInputs', '?');
             document.getElementById('numberInputTitle').textContent = `${player1Name}: Enter your secret number (${difficulty} digits)`;
             
@@ -662,39 +652,32 @@
             const secretNumber = [];
             
             for (let input of inputs) {
-                if (!input.value || input.value < 0 || input.value > 9) {
+                if (input.value === '' || input.value < 0 || input.value > 9) {
                     alert('Please enter valid single digits (0-9) for all positions!');
                     return;
                 }
                 secretNumber.push(parseInt(input.value));
             }
             
-            // Check for duplicate digits
-            const uniqueDigits = new Set(secretNumber);
-            if (uniqueDigits.size !== secretNumber.length) {
-                alert('Please enter unique digits! No duplicates allowed.');
-                return;
-            }
-            
+            // REMOVED: Unique digit check to match Java logic.
+
             if (gamePhase === 'secret1') {
                 player1Secret = [...secretNumber];
                 gamePhase = 'secret2';
                 document.getElementById('numberInputTitle').textContent = `${player2Name}: Enter your secret number (${difficulty} digits)`;
-                generateInputs('numberInputs', '?');
-                updateCurrentPlayerDisplay();
+                generateInputs('numberInputs', '?'); // Clear inputs for next player
             } else if (gamePhase === 'secret2') {
                 player2Secret = [...secretNumber];
                 gamePhase = 'guessing';
                 currentPlayer = 1;
                 
-                // Hide secret number input and show guessing interface
                 document.getElementById('numberInputSection').style.display = 'none';
                 document.getElementById('guessSection').style.display = 'block';
                 
                 generateInputs('guessInputs', '?');
                 document.getElementById('guessTitle').textContent = `${player1Name}: Make your guess`;
-                updateCurrentPlayerDisplay();
             }
+            updateCurrentPlayerDisplay();
         }
 
         function makeGuess() {
@@ -704,26 +687,22 @@
             const guess = [];
             
             for (let input of inputs) {
-                if (!input.value || input.value < 0 || input.value > 9) {
+                if (input.value === '' || input.value < 0 || input.value > 9) {
                     alert('Please enter valid single digits (0-9) for all positions!');
                     return;
                 }
                 guess.push(parseInt(input.value));
             }
-            
-            // Check for duplicate digits
-            const uniqueDigits = new Set(guess);
-            if (uniqueDigits.size !== guess.length) {
-                alert('Please enter unique digits! No duplicates allowed.');
-                return;
-            }
+
+            // REMOVED: Unique digit check to match Java logic.
 
             const targetSecret = currentPlayer === 1 ? player2Secret : player1Secret;
             const result = checkGuess(guess, targetSecret);
             displayResult(result, guess);
             addToHistory(guess, result);
             
-            if (result.correct) {
+            // Winning condition based on Java code (cows == length)
+            if (result.cows === difficulty) {
                 gameActive = false;
                 updateScore();
                 setTimeout(() => {
@@ -737,14 +716,18 @@
                     document.getElementById('result').style.display = 'block';
                 }, 100);
             } else {
-                roundCount++;
+                // A round completes after player 2 makes a move
+                if (currentPlayer === 2) {
+                    roundCount++;
+                }
+
                 if (roundCount >= maxRounds) {
                     gameActive = false;
                     setTimeout(() => {
                         document.getElementById('result').innerHTML = `
                             <div class="winner-announcement" style="color: #dc3545; background: linear-gradient(45deg, #f8d7da, #f5c6cb); border-color: #dc3545;">
                                 ⏰ Game Over! ⏰<br>
-                                <small>Maximum rounds reached. It's a tie!</small>
+                                <small>Maximum rounds reached.</small>
                             </div>
                         `;
                         document.getElementById('result').style.display = 'block';
@@ -752,50 +735,49 @@
                 } else {
                     currentPlayer = currentPlayer === 1 ? 2 : 1;
                     generateInputs('guessInputs', '?');
-                    document.getElementById('guessTitle').textContent = `${currentPlayer === 1 ? player1Name : player2Name}: Make your guess`;
+                    const nextPlayerName = currentPlayer === 1 ? player1Name : player2Name;
+                    document.getElementById('guessTitle').textContent = `${nextPlayerName}: Make your guess`;
                     updateCurrentPlayerDisplay();
                 }
             }
         }
 
+        // UPDATED: This function now mimics the logic from cow_vs_bull.java
         function checkGuess(guess, targetSecret) {
-            let bulls = 0;
-            let cows = 0;
-            let used = new Set();
+            let b = 0; // Total matches (flawed Java logic)
+            let c = 0; // Correct digit in correct position (Java's "cows")
 
-            // Check for bulls (correct digit in correct position)
-            for (let i = 0; i < difficulty; i++) {
-                if (guess[i] === targetSecret[i]) {
-                    bulls++;
-                    used.add(i);
+            // Calculate 'c' (correct digit, correct position)
+            for (let k = 0; k < difficulty; k++) {
+                if (guess[k] === targetSecret[k]) {
+                    c++;
                 }
             }
 
-            // Check for cows (correct digit in wrong position)
-            for (let i = 0; i < difficulty; i++) {
-                if (!used.has(i)) {
-                    for (let j = 0; j < difficulty; j++) {
-                        if (!used.has(j) && guess[i] === targetSecret[j]) {
-                            cows++;
-                            used.add(j);
-                            break;
-                        }
+            // Calculate 'b' (total occurrences, mimicking Java's flawed nested loop)
+            for (let x = 0; x < difficulty; x++) {
+                for (let y = 0; y < difficulty; y++) {
+                    if (guess[x] === targetSecret[y]) {
+                        b++;
                     }
                 }
             }
-
+            
+            // Calculate 'bulls' as defined in Java (b - c)
+            let bulls = b - c;
+            
             return {
-                correct: bulls === difficulty,
-                bulls: bulls,
-                cows: cows
+                bulls: bulls, // Correct digit, wrong position
+                cows: c       // Correct digit, correct position
             };
         }
 
+        // UPDATED: Displays "bulls" and "cows" as per Java's definition
         function displayResult(result, guess) {
             const resultDiv = document.getElementById('result');
             resultDiv.style.display = 'block';
             
-            if (result.correct) {
+            if (result.cows === difficulty) { // Win condition
                 resultDiv.className = 'result correct';
                 resultDiv.textContent = `🎉 Correct! ${guess.join('')} is the right number!`;
             } else {
@@ -806,10 +788,12 @@
             }
         }
 
+        // UPDATED: Adds history item with Java's definition of bull/cow
         function addToHistory(guess, result) {
             const historyDiv = document.getElementById('guessHistory');
             const guessItem = document.createElement('div');
-            guessItem.className = `guess-item ${result.correct ? 'correct' : 'incorrect'}`;
+            const isWin = result.cows === difficulty;
+            guessItem.className = `guess-item ${isWin ? 'correct' : 'incorrect'}`;
             
             const playerName = currentPlayer === 1 ? player1Name : player2Name;
             const bullText = result.bulls === 1 ? 'bull' : 'bulls';
@@ -843,7 +827,6 @@
             player2Secret = [];
         }
 
-        // Allow Enter key to submit
         document.addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
                 if (gamePhase === 'secret1' || gamePhase === 'secret2') {

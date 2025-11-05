@@ -555,11 +555,12 @@
                 <h3 style="text-align:center;color:#333;">Play Online (Peer-to-Peer)</h3>
                 <div class="online-controls">
                     <button id="btnCreateRoom" onclick="createRoom()">Create Room</button>
-                    <input type="text" id="roomIdInput" placeholder="Enter Room ID to Join">
+                    <input type="text" id="roomIdInput" placeholder="Room Code (fill to set custom; required for Join)">
                     <button id="btnJoinRoom" onclick="joinRoom()">Join Room</button>
                     <input type="text" id="roomIdDisplay" placeholder="Room ID" readonly>
                 </div>
                 <div class="conn-status" id="connStatus">Not connected (Local Play)</div>
+                <div id="qrContainer" style="margin-top:12px; display:flex; justify-content:center;"></div>
             </div>
             
             <div class="difficulty-section">
@@ -616,6 +617,7 @@
     </div>
 
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script>
         let currentPlayer = 1;
         let player1Secret = [];
@@ -659,12 +661,40 @@
             const roomIdInput = document.getElementById('roomIdInput');
             const roomIdDisplay = document.getElementById('roomIdDisplay');
             const connStatus = document.getElementById('connStatus');
+            const qrContainer = document.getElementById('qrContainer');
 
             function setStatus(text) { if (connStatus) connStatus.textContent = text; }
 
             if (typeof Peer === 'undefined') {
                 setStatus('PeerJS failed to load. Check your internet or use HTTPS hosting.');
                 return;
+            }
+
+            function clearQR() {
+                if (!qrContainer) return;
+                qrContainer.innerHTML = '';
+            }
+
+            function renderQR(text) {
+                if (!qrContainer) return;
+                clearQR();
+                const wrapper = document.createElement('div');
+                wrapper.style.padding = '8px';
+                wrapper.style.background = '#fff';
+                wrapper.style.borderRadius = '12px';
+                wrapper.style.border = '2px solid #e9ecef';
+                qrContainer.appendChild(wrapper);
+                if (typeof QRCode !== 'undefined') {
+                    new QRCode(wrapper, { text, width: 180, height: 180 });
+                } else {
+                    const img = document.createElement('img');
+                    const url = 'https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=' + encodeURIComponent(text);
+                    img.src = url;
+                    img.alt = 'QR Code';
+                    img.width = 180;
+                    img.height = 180;
+                    wrapper.appendChild(img);
+                }
             }
 
             function setupPeerEvents() {
@@ -676,6 +706,7 @@
                 peer.on('open', (id) => {
                     if (roomIdDisplay) roomIdDisplay.value = id;
                     setStatus('Room created. Share Room ID with your friend.');
+                    renderQR(id);
                 });
                 peer.on('error', (e) => setStatus('Connection error: ' + e.message));
                 peer.on('disconnected', () => setStatus('Disconnected.')); 
@@ -700,7 +731,10 @@
 
             function createRoom() {
                 localPlayerNumber = 1;
-                peer = new Peer(undefined, {
+                const desiredId = roomIdInput.value.trim() || undefined;
+                setStatus('Creating room...');
+                clearQR();
+                peer = new Peer(desiredId, {
                     host: 'peerjs.com',
                     port: 443,
                     path: '/',
@@ -722,6 +756,7 @@
                 const id = roomIdInput.value.trim();
                 if (!id) { setStatus('Enter a Room ID to join.'); return; }
                 localPlayerNumber = 2;
+                clearQR();
                 peer = new Peer(undefined, {
                     host: 'peerjs.com',
                     port: 443,
@@ -737,6 +772,7 @@
                     }
                 });
                 peer.on('open', () => {
+                    setStatus('Connecting to host...');
                     conn = peer.connect(id, { reliable: true });
                     conn.on('open', () => {
                         wireConnection();
@@ -755,6 +791,10 @@
             // Also wire via JS (backup if inline attrs are stripped)
             if (btnCreate) btnCreate.addEventListener('click', createRoom);
             if (btnJoin) btnJoin.addEventListener('click', joinRoom);
+
+            // Expose for inline handlers
+            window.createRoom = createRoom;
+            window.joinRoom = joinRoom;
 
             function handleIncomingMessage(message) {
                 if (!message || !message.type) return;
@@ -825,7 +865,6 @@
 
             // Expose to outer scope
             window.__online = { setStatus };
-        });
         });
 
         function generateInputs(containerId, placeholder) {

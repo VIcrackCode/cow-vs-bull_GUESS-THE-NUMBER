@@ -554,9 +554,9 @@
             <div class="online-section">
                 <h3 style="text-align:center;color:#333;">Play Online (Peer-to-Peer)</h3>
                 <div class="online-controls">
-                    <button id="btnCreateRoom">Create Room</button>
+                    <button id="btnCreateRoom" onclick="createRoom()">Create Room</button>
                     <input type="text" id="roomIdInput" placeholder="Enter Room ID to Join">
-                    <button id="btnJoinRoom">Join Room</button>
+                    <button id="btnJoinRoom" onclick="joinRoom()">Join Room</button>
                     <input type="text" id="roomIdDisplay" placeholder="Room ID" readonly>
                 </div>
                 <div class="conn-status" id="connStatus">Not connected (Local Play)</div>
@@ -662,10 +662,16 @@
 
             function setStatus(text) { if (connStatus) connStatus.textContent = text; }
 
+            if (typeof Peer === 'undefined') {
+                setStatus('PeerJS failed to load. Check your internet or use HTTPS hosting.');
+                return;
+            }
+
             function setupPeerEvents() {
                 peer.on('connection', (c) => {
                     conn = c;
                     wireConnection();
+                    disableOnlineButtons(true);
                 });
                 peer.on('open', (id) => {
                     if (roomIdDisplay) roomIdDisplay.value = id;
@@ -673,7 +679,7 @@
                 });
                 peer.on('error', (e) => setStatus('Connection error: ' + e.message));
                 peer.on('disconnected', () => setStatus('Disconnected.')); 
-                peer.on('close', () => setStatus('Connection closed.'));
+                peer.on('close', () => { setStatus('Connection closed.'); disableOnlineButtons(false); });
             }
 
             function wireConnection() {
@@ -681,7 +687,7 @@
                 isOnline = true;
                 setStatus('Connected. Online mode enabled.');
                 conn.on('data', handleIncomingMessage);
-                conn.on('close', () => setStatus('Peer disconnected.'));
+                conn.on('close', () => { setStatus('Peer disconnected.'); disableOnlineButtons(false); });
                 // Initiate handshake: send INIT if creator
                 if (localPlayerNumber === 1) {
                     sendMsg({ type: 'INIT', payload: { difficulty, player1Name, player2Name } });
@@ -692,10 +698,10 @@
                 try { conn && conn.open && conn.send(msg); } catch (e) {}
             }
 
-            btnCreate.addEventListener('click', () => {
+            function createRoom() {
                 localPlayerNumber = 1;
                 peer = new Peer(undefined, {
-                    host: '0.peerjs.com',
+                    host: 'peerjs.com',
                     port: 443,
                     path: '/',
                     secure: true,
@@ -709,14 +715,15 @@
                     }
                 });
                 setupPeerEvents();
-            });
+                disableOnlineButtons(true);
+            }
 
-            btnJoin.addEventListener('click', () => {
+            function joinRoom() {
                 const id = roomIdInput.value.trim();
                 if (!id) { setStatus('Enter a Room ID to join.'); return; }
                 localPlayerNumber = 2;
                 peer = new Peer(undefined, {
-                    host: '0.peerjs.com',
+                    host: 'peerjs.com',
                     port: 443,
                     path: '/',
                     secure: true,
@@ -734,10 +741,20 @@
                     conn.on('open', () => {
                         wireConnection();
                         setStatus('Joined room. Waiting for host.');
+                        disableOnlineButtons(true);
                     });
                 });
                 peer.on('error', (e) => setStatus('Connection error: ' + e.message));
-            });
+            }
+
+            function disableOnlineButtons(disabled) {
+                if (btnCreate) btnCreate.disabled = disabled;
+                if (btnJoin) btnJoin.disabled = disabled;
+            }
+
+            // Also wire via JS (backup if inline attrs are stripped)
+            if (btnCreate) btnCreate.addEventListener('click', createRoom);
+            if (btnJoin) btnJoin.addEventListener('click', joinRoom);
 
             function handleIncomingMessage(message) {
                 if (!message || !message.type) return;

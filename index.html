@@ -22,6 +22,8 @@
             overflow-x: hidden;
         }
 
+        
+
         .game-container {
             background: rgba(255, 255, 255, 0.95);
             backdrop-filter: blur(10px);
@@ -32,6 +34,8 @@
             width: 100%;
             animation: slideIn 0.8s ease-out;
         }
+
+        
 
         @keyframes slideIn {
             from {
@@ -94,6 +98,48 @@
         .difficulty-section {
             margin-bottom: 25px;
             text-align: center;
+        }
+
+        .online-section {
+            margin: 20px 0 30px 0;
+            padding: 16px;
+            background: rgba(248, 249, 250, 0.8);
+            border-radius: 16px;
+            border: 2px solid #e9ecef;
+        }
+
+        .online-controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-top: 12px;
+        }
+
+        .online-controls input, .online-controls button {
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 12px;
+            font-size: 14px;
+        }
+
+        .online-controls button {
+            border-color: #667eea;
+            color: #667eea;
+            background: #fff;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .online-controls button:hover {
+            background: #667eea;
+            color: #fff;
+        }
+
+        .conn-status {
+            text-align: center;
+            font-size: 0.95em;
+            color: #555;
+            margin-top: 8px;
         }
 
         .difficulty-buttons {
@@ -492,6 +538,7 @@
                 height: 50px;
                 font-size: 20px;
             }
+            
         }
     </style>
 </head>
@@ -503,6 +550,16 @@
             <div class="player-input">
                 <input type="text" id="player1Name" placeholder="Player 1 Name">
                 <input type="text" id="player2Name" placeholder="Player 2 Name">
+            </div>
+            <div class="online-section">
+                <h3 style="text-align:center;color:#333;">Play Online (Peer-to-Peer)</h3>
+                <div class="online-controls">
+                    <button id="btnCreateRoom">Create Room</button>
+                    <input type="text" id="roomIdInput" placeholder="Enter Room ID to Join">
+                    <button id="btnJoinRoom">Join Room</button>
+                    <input type="text" id="roomIdDisplay" placeholder="Room ID" readonly>
+                </div>
+                <div class="conn-status" id="connStatus">Not connected (Local Play)</div>
             </div>
             
             <div class="difficulty-section">
@@ -558,6 +615,7 @@
         </div>
     </div>
 
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <script>
         let currentPlayer = 1;
         let player1Secret = [];
@@ -571,6 +629,14 @@
         let difficulty = 4;
         let roundCount = 0;
         const maxRounds = 15;
+        // Online state
+        let isOnline = false;
+        let localPlayerNumber = 1; // 1 for room creator, 2 for joiner
+        let peer = null;
+        let conn = null;
+        let remoteReady = false;
+        let localSecretSet = false;
+        let remoteSecretSet = false;
 
         function selectDifficulty(button) {
             document.querySelectorAll('.difficulty-btn').forEach(btn => {
@@ -585,6 +651,164 @@
                 button.addEventListener('click', () => selectDifficulty(button));
             });
             selectDifficulty(document.querySelector('[data-size="4"]'));
+            
+
+            // Online controls
+            const btnCreate = document.getElementById('btnCreateRoom');
+            const btnJoin = document.getElementById('btnJoinRoom');
+            const roomIdInput = document.getElementById('roomIdInput');
+            const roomIdDisplay = document.getElementById('roomIdDisplay');
+            const connStatus = document.getElementById('connStatus');
+
+            function setStatus(text) { if (connStatus) connStatus.textContent = text; }
+
+            function setupPeerEvents() {
+                peer.on('connection', (c) => {
+                    conn = c;
+                    wireConnection();
+                });
+                peer.on('open', (id) => {
+                    if (roomIdDisplay) roomIdDisplay.value = id;
+                    setStatus('Room created. Share Room ID with your friend.');
+                });
+                peer.on('error', (e) => setStatus('Connection error: ' + e.message));
+                peer.on('disconnected', () => setStatus('Disconnected.')); 
+                peer.on('close', () => setStatus('Connection closed.'));
+            }
+
+            function wireConnection() {
+                if (!conn) return;
+                isOnline = true;
+                setStatus('Connected. Online mode enabled.');
+                conn.on('data', handleIncomingMessage);
+                conn.on('close', () => setStatus('Peer disconnected.'));
+                // Initiate handshake: send INIT if creator
+                if (localPlayerNumber === 1) {
+                    sendMsg({ type: 'INIT', payload: { difficulty, player1Name, player2Name } });
+                }
+            }
+
+            function sendMsg(msg) {
+                try { conn && conn.open && conn.send(msg); } catch (e) {}
+            }
+
+            btnCreate.addEventListener('click', () => {
+                localPlayerNumber = 1;
+                peer = new Peer(undefined, {
+                    host: '0.peerjs.com',
+                    port: 443,
+                    path: '/',
+                    secure: true,
+                    debug: 2,
+                    config: {
+                        iceServers: [
+                            { urls: 'stun:stun.l.google.com:19302' },
+                            { urls: 'stun:stun1.l.google.com:19302' },
+                            { urls: 'stun:stun2.l.google.com:19302' }
+                        ]
+                    }
+                });
+                setupPeerEvents();
+            });
+
+            btnJoin.addEventListener('click', () => {
+                const id = roomIdInput.value.trim();
+                if (!id) { setStatus('Enter a Room ID to join.'); return; }
+                localPlayerNumber = 2;
+                peer = new Peer(undefined, {
+                    host: '0.peerjs.com',
+                    port: 443,
+                    path: '/',
+                    secure: true,
+                    debug: 2,
+                    config: {
+                        iceServers: [
+                            { urls: 'stun:stun.l.google.com:19302' },
+                            { urls: 'stun:stun1.l.google.com:19302' },
+                            { urls: 'stun:stun2.l.google.com:19302' }
+                        ]
+                    }
+                });
+                peer.on('open', () => {
+                    conn = peer.connect(id, { reliable: true });
+                    conn.on('open', () => {
+                        wireConnection();
+                        setStatus('Joined room. Waiting for host.');
+                    });
+                });
+                peer.on('error', (e) => setStatus('Connection error: ' + e.message));
+            });
+
+            function handleIncomingMessage(message) {
+                if (!message || !message.type) return;
+                switch (message.type) {
+                    case 'INIT': {
+                        // Host shared defaults
+                        difficulty = message.payload.difficulty;
+                        player1Name = message.payload.player1Name || player1Name;
+                        player2Name = message.payload.player2Name || player2Name;
+                        document.querySelectorAll('.difficulty-btn').forEach(btn => btn.classList.remove('selected'));
+                        const btn = document.querySelector(`.difficulty-btn[data-size="${difficulty}"]`);
+                        if (btn) btn.classList.add('selected');
+                        break;
+                    }
+                    case 'SECRET_SET': {
+                        if (message.payload.player === 1) remoteSecretSet = true; else remoteSecretSet = true;
+                        checkSecretsReady();
+                        break;
+                    }
+                    case 'START_GUESSING': {
+                        gamePhase = 'guessing';
+                        currentPlayer = 1;
+                        document.getElementById('numberInputSection').style.display = 'none';
+                        document.getElementById('guessSection').style.display = 'block';
+                        generateInputs('guessInputs', '?');
+                        document.getElementById('guessTitle').textContent = `${currentPlayer === 1 ? player1Name : player2Name}: Make your guess`;
+                        updateCurrentPlayerDisplay();
+                        break;
+                    }
+                    case 'GUESS': {
+                        // Opponent guessed; compute result locally using my secret
+                        const guess = message.payload.guess;
+                        const targetSecret = localPlayerNumber === 1 ? player1Secret : player2Secret;
+                        const result = checkGuess(guess, targetSecret);
+                        // send back result to opponent
+                        sendMsg({ type: 'RESULT', payload: { to: message.payload.from, result, guess } });
+                        // Switch turn locally
+                        currentPlayer = currentPlayer === 1 ? 2 : 1;
+                        updateTurnUIAfterMove(result, guess, false);
+                        break;
+                    }
+                    case 'RESULT': {
+                        // We were the guesser; show our own result and advance
+                        updateTurnUIAfterMove(message.payload.result, message.payload.guess, true);
+                        break;
+                    }
+                    case 'NEW_GAME': {
+                        // Reset to setup
+                        newGame();
+                        break;
+                    }
+                }
+            }
+
+            function checkSecretsReady() {
+                if (localSecretSet && remoteSecretSet) {
+                    // Both secrets set, start guessing round with Player 1
+                    sendMsg({ type: 'START_GUESSING' });
+                    gamePhase = 'guessing';
+                    currentPlayer = 1;
+                    document.getElementById('numberInputSection').style.display = 'none';
+                    document.getElementById('guessSection').style.display = 'block';
+                    generateInputs('guessInputs', '?');
+                    document.getElementById('guessTitle').textContent = `${player1Name}: Make your guess`;
+                    updateCurrentPlayerDisplay();
+                }
+            }
+
+            // Expose to outer scope
+            window.__online = { setStatus };
+        });
         });
 
         function generateInputs(containerId, placeholder) {
@@ -622,6 +846,7 @@
             document.getElementById('p2Name').textContent = player2Name;
             document.getElementById('vsDisplay').textContent = `${player1Name} V/S ${player2Name}`;
             
+            
             gamePhase = 'secret1';
             gameActive = true;
             roundCount = 0;
@@ -632,10 +857,23 @@
             document.getElementById('result').style.display = 'none';
             
             generateInputs('numberInputs', '?');
-            document.getElementById('numberInputTitle').textContent = `${player1Name}: Enter your secret number (${difficulty} digits)`;
+            // In online mode, each device should enter its own secret only
+            if (isOnline) {
+                if (localPlayerNumber === 1) {
+                    gamePhase = 'secret1';
+                    document.getElementById('numberInputTitle').textContent = `${player1Name}: Enter your secret number (${difficulty} digits)`;
+                } else {
+                    gamePhase = 'secret2';
+                    document.getElementById('numberInputTitle').textContent = `${player2Name}: Enter your secret number (${difficulty} digits)`;
+                }
+            } else {
+                document.getElementById('numberInputTitle').textContent = `${player1Name}: Enter your secret number (${difficulty} digits)`;
+            }
             
             updateCurrentPlayerDisplay();
         }
+
+        
 
         function updateCurrentPlayerDisplay() {
             const playerName = currentPlayer === 1 ? player1Name : player2Name;
@@ -656,21 +894,39 @@
             
             // REMOVED: Unique digit check to match Java logic.
 
-            if (gamePhase === 'secret1') {
-                player1Secret = [...secretNumber];
-                gamePhase = 'secret2';
-                document.getElementById('numberInputTitle').textContent = `${player2Name}: Enter your secret number (${difficulty} digits)`;
-                generateInputs('numberInputs', '?'); // Clear inputs for next player
-            } else if (gamePhase === 'secret2') {
-                player2Secret = [...secretNumber];
-                gamePhase = 'guessing';
-                currentPlayer = 1;
-                
-                document.getElementById('numberInputSection').style.display = 'none';
-                document.getElementById('guessSection').style.display = 'block';
-                
-                generateInputs('guessInputs', '?');
-                document.getElementById('guessTitle').textContent = `${player1Name}: Make your guess`;
+            if (isOnline) {
+                if (localPlayerNumber === 1 && gamePhase === 'secret1') {
+                    player1Secret = [...secretNumber];
+                    localSecretSet = true;
+                    // notify peer that P1 secret is set
+                    if (conn) conn.send({ type: 'SECRET_SET', payload: { player: 1 } });
+                    // Wait for remote to set their secret
+                    document.getElementById('numberInputTitle').textContent = `${player2Name}: Waiting for opponent to set secret...`;
+                    checkSecretsReady();
+                } else if (localPlayerNumber === 2 && gamePhase === 'secret2') {
+                    player2Secret = [...secretNumber];
+                    localSecretSet = true;
+                    if (conn) conn.send({ type: 'SECRET_SET', payload: { player: 2 } });
+                    document.getElementById('numberInputTitle').textContent = `${player1Name}: Waiting for opponent to start...`;
+                    checkSecretsReady();
+                }
+            } else {
+                if (gamePhase === 'secret1') {
+                    player1Secret = [...secretNumber];
+                    gamePhase = 'secret2';
+                    document.getElementById('numberInputTitle').textContent = `${player2Name}: Enter your secret number (${difficulty} digits)`;
+                    generateInputs('numberInputs', '?'); // Clear inputs for next player
+                } else if (gamePhase === 'secret2') {
+                    player2Secret = [...secretNumber];
+                    gamePhase = 'guessing';
+                    currentPlayer = 1;
+                    
+                    document.getElementById('numberInputSection').style.display = 'none';
+                    document.getElementById('guessSection').style.display = 'block';
+                    
+                    generateInputs('guessInputs', '?');
+                    document.getElementById('guessTitle').textContent = `${player1Name}: Make your guess`;
+                }
             }
             updateCurrentPlayerDisplay();
         }
@@ -691,12 +947,27 @@
 
             // REMOVED: Unique digit check to match Java logic.
 
-            const targetSecret = currentPlayer === 1 ? player2Secret : player1Secret;
-            const result = checkGuess(guess, targetSecret);
+            if (isOnline) {
+                // Only allow local move if it's our turn
+                const myTurn = (currentPlayer === localPlayerNumber);
+                if (!myTurn) { alert('Wait for your turn.'); return; }
+                // Send guess to opponent; opponent computes and replies
+                if (conn && conn.open) {
+                    conn.send({ type: 'GUESS', payload: { from: localPlayerNumber, guess } });
+                }
+                // Do not compute locally; wait for RESULT to update UI and history
+            } else {
+                const targetSecret = currentPlayer === 1 ? player2Secret : player1Secret;
+                const result = checkGuess(guess, targetSecret);
+                updateTurnUIAfterMove(result, guess, true);
+            }
+        }
+
+        function updateTurnUIAfterMove(result, guess, shouldAddHistoryForThisClient) {
             displayResult(result, guess);
-            addToHistory(guess, result);
-            
-            // Winning condition based on Java code (cows == length)
+            if (shouldAddHistoryForThisClient) {
+                addToHistory(guess, result);
+            }
             if (result.cows === difficulty) {
                 gameActive = false;
                 updateScore();
@@ -710,30 +981,30 @@
                     `;
                     document.getElementById('result').style.display = 'block';
                 }, 100);
-            } else {
-                // A round completes after player 2 makes a move
-                if (currentPlayer === 2) {
-                    roundCount++;
-                }
+                return;
+            }
 
-                if (roundCount >= maxRounds) {
-                    gameActive = false;
-                    setTimeout(() => {
-                        document.getElementById('result').innerHTML = `
-                            <div class="winner-announcement" style="color: #dc3545; background: linear-gradient(45deg, #f8d7da, #f5c6cb); border-color: #dc3545;">
-                                ⏰ Game Over! ⏰<br>
-                                <small>Maximum rounds reached.</small>
-                            </div>
-                        `;
-                        document.getElementById('result').style.display = 'block';
-                    }, 100);
-                } else {
-                    currentPlayer = currentPlayer === 1 ? 2 : 1;
-                    generateInputs('guessInputs', '?');
-                    const nextPlayerName = currentPlayer === 1 ? player1Name : player2Name;
-                    document.getElementById('guessTitle').textContent = `${nextPlayerName}: Make your guess`;
-                    updateCurrentPlayerDisplay();
-                }
+            if (currentPlayer === 2) {
+                roundCount++;
+            }
+
+            if (roundCount >= maxRounds) {
+                gameActive = false;
+                setTimeout(() => {
+                    document.getElementById('result').innerHTML = `
+                        <div class="winner-announcement" style="color: #dc3545; background: linear-gradient(45deg, #f8d7da, #f5c6cb); border-color: #dc3545;">
+                            ⏰ Game Over! ⏰<br>
+                            <small>Maximum rounds reached.</small>
+                        </div>
+                    `;
+                    document.getElementById('result').style.display = 'block';
+                }, 100);
+            } else {
+                currentPlayer = currentPlayer === 1 ? 2 : 1;
+                generateInputs('guessInputs', '?');
+                const nextPlayerName = currentPlayer === 1 ? player1Name : player2Name;
+                document.getElementById('guessTitle').textContent = `${nextPlayerName}: Make your guess`;
+                updateCurrentPlayerDisplay();
             }
         }
 
@@ -820,6 +1091,12 @@
             roundCount = 0;
             player1Secret = [];
             player2Secret = [];
+            localSecretSet = false;
+            remoteSecretSet = false;
+            document.getElementById('guessHistory').innerHTML = '';
+            if (isOnline && conn && conn.open) {
+                conn.send({ type: 'NEW_GAME' });
+            }
         }
 
         document.addEventListener('keypress', function(e) {
